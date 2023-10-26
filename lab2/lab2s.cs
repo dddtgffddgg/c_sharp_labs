@@ -2,9 +2,8 @@ using System;
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
+using System.Collections.Generic;
 
 struct Message
 {
@@ -14,70 +13,59 @@ struct Message
 
 class PipeServer
 {
-    static Queue<Message> messageQueue = new Queue<Message>();
-    static CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
-    static List<Message> receivedMessages = new List<Message>();
-
-    static async Task Main(string[] args)
+    static void Main(string[] args)
     {
         using (var pipeServer = new NamedPipeServerStream("C_Sharp_Labs"))
         {
             Console.WriteLine("Server is waiting for a connection...");
             pipeServer.WaitForConnection();
 
-            Task processMessagesTask = Task.Run(() => ProcessMessages(pipeServer));
+            // Создаем очередь для данных с приоритетом
+            PriorityQueue<Message> dataQueue = new PriorityQueue<Message>();
 
-            Console.CancelKeyPress += (s, e) =>
+            // Поток для обработки данных
+            Thread dataProcessingThread = new Thread(() =>
             {
-                e.Cancel = true; // Prevent the process from terminating immediately
-                cancellationTokenSource.Cancel(); // Signal cancellation
+                while (true)
+                {
+                    if (dataQueue.Count > 0)
+                    {
+                        var message = dataQueue.Dequeue();
+                        Console.WriteLine($"Result = {message.Result}, Data = {message.Data}");
+                        // Здесь можно выполнить действия с данными, например, записать их в файл
+                    }
+                    // Здесь можно добавить паузу, если нужно
+                }
+            });
+
+            dataProcessingThread.Start();
+
+            Console.WriteLine("Введите данные и приоритет (Ctrl+C для завершения).");
+
+            // Обработка Ctrl+C
+            Console.CancelKeyPress += (sender, e) =>
+            {
+                e.Cancel = true; // Предотвращаем завершение по Ctrl+C
+                dataProcessingThread.Join(); // Дожидаемся завершения потока обработки данных
+                pipeServer.Close(); // Закрываем канал перед завершением
+                Console.WriteLine("Server's work is done");
+                Environment.Exit(0);
             };
 
-            while (!cancellationTokenSource.Token.IsCancellationRequested)
+            while (true)
             {
-                Message newMessage = ReadMessage(pipeServer);
-                Console.WriteLine("Received: Result = {0}, Data = {1}", newMessage.Result, newMessage.Data);
-                receivedMessages.Add(newMessage);
+                try
+                {
+                    int data = int.Parse(Console.ReadLine());
+                    bool result = bool.Parse(Console.ReadLine());
+                    Message receivedMessage = new Message { Data = data, Result = result };
+                    dataQueue.Enqueue(receivedMessage);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Ошибка при вводе данных: {e.Message}");
+                }
             }
-
-            // Save received messages to a file or display them
-            // Example: SaveMessagesToFile(receivedMessages);
-
-            await processMessagesTask; // Wait for the ProcessMessages task to complete
-        }
-
-        Console.WriteLine("Server's work is done");
-        Console.ReadLine();
-    }
-
-    static Message ReadMessage(NamedPipeServerStream pipeStream)
-    {
-        byte[] buffer = new byte[Unsafe.SizeOf<Message>()];
-        pipeStream.Read(buffer, 0, buffer.Length);
-        return MemoryMarshal.Read<Message>(buffer);
-    }
-
-    static void WriteMessage(NamedPipeServerStream pipeStream, Message message)
-    {
-        byte[] buffer = new byte[Unsafe.SizeOf<Message>()];
-
-        MemoryMarshal.Write(buffer, ref message);
-
-        pipeStream.Write(buffer, 0, buffer.Length);
-        pipeStream.Flush();
-    }
-
-    static async Task ProcessMessages(NamedPipeServerStream pipeServer)
-    {
-        while (!cancellationTokenSource.Token.IsCancellationRequested)
-        {
-            if (messageQueue.Count > 0)
-            {
-                Message message = messageQueue.Dequeue();
-                WriteMessage(pipeServer, message); 
-            }
-
-            await Task.Delay(100); 
         }
     }
 }
