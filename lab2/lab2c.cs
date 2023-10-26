@@ -3,8 +3,6 @@ using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 
 struct Message
 {
@@ -14,41 +12,32 @@ struct Message
 
 class PipeClient
 {
-    static Queue<Message> messageQueue = new Queue<Message>();
-
-    static async Task Main(string[] args)
+    static void Main(string[] args)
     {
-        using (var pipeClient = new NamedPipeClientStream(".", "C_Sharp_Labs", PipeDirection.InOut))
+        using (var pipeClient = new NamedPipeClientStream(".", "C_Sharp2", PipeDirection.InOut))
         {
             Console.WriteLine("Client is connecting...");
-            await pipeClient.ConnectAsync();
+            pipeClient.Connect();
 
-            CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            Console.WriteLine("Введите данные и приоритет (Ctrl+C для завершения).");
 
-            Task sendMessagesTask = Task.Run(() => SendMessages(pipeClient, cancellationTokenSource.Token));
-
-            Console.CancelKeyPress += (s, e) =>
+            while (true)
             {
-                e.Cancel = true; // Prevent the process from terminating immediately
-                cancellationTokenSource.Cancel(); // Signal cancellation
-            };
-
-            while (!cancellationTokenSource.Token.IsCancellationRequested)
-            {
-                Message receivedMessage = ReadMessage(pipeClient);
-                Console.WriteLine("Received: Result = {0}, Data = {1}", receivedMessage.Result, receivedMessage.Data);
+                try
+                {
+                    int data = int.Parse(Console.ReadLine());
+                    bool result = bool.Parse(Console.ReadLine());
+                    Message sentMessage = new Message { Data = data, Result = result };
+                    WriteMessage(pipeClient, sentMessage);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Ошибка при вводе данных: {e.Message}");
+                }
             }
         }
 
         Console.WriteLine("Client's work is done");
-        Console.ReadLine();
-    }
-
-    static Message ReadMessage(NamedPipeClientStream pipeStream)
-    {
-        byte[] buffer = new byte[Unsafe.SizeOf<Message>()];
-        pipeStream.Read(buffer, 0, buffer.Length);
-        return MemoryMarshal.Read<Message>(buffer);
     }
 
     static void WriteMessage(NamedPipeClientStream pipeStream, Message message)
@@ -59,18 +48,5 @@ class PipeClient
 
         pipeStream.Write(buffer, 0, buffer.Length);
         pipeStream.Flush();
-    }
-
-    static async Task SendMessages(NamedPipeClientStream pipeStream, CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            Message message = new Message { Data = 10, Result = false };
-            messageQueue.Enqueue(message);
-
-            Console.WriteLine("Sent: Result = {0}, Data = {1}", message.Result, message.Data);
-
-            await Task.Delay(1000);
-        }
     }
 }
