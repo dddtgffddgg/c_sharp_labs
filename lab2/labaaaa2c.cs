@@ -1,12 +1,13 @@
 using System;
 using System.IO.Pipes;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 struct Message
 {
     public bool Result { get; set; }
     public int Data { get; set; }
+    public int Priority { get; set; }
 }
 
 class PipeClient
@@ -18,15 +19,14 @@ class PipeClient
             Console.WriteLine("Client is connecting...");
             pipeClient.Connect();
 
-            Message sentMessage = new Message { Data = 10, Result = false };
+            Message sentMessage = new Message { Data = 10, Result = false, Priority = 1 };
             WriteMessage(pipeClient, sentMessage);
 
-            Message receivedMessage = ReadMessage(pipeClient);
-            Console.WriteLine("Result = {0}, Data = {1}", receivedMessage.Result, receivedMessage.Data);
-        }
+            // Здесь вы можете отправлять больше сообщений клиентом, если нужно
 
-        Console.WriteLine("Client's work is done");
-        Console.ReadLine();
+            Console.WriteLine("Client's work is done");
+            Console.ReadLine();
+        }
     }
 
     static Message ReadMessage(NamedPipeClientStream pipeStream)
