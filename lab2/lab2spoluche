@@ -1,0 +1,133 @@
+using System;
+using System.IO.Pipes;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+
+internal struct Message
+{
+    public int valueA { get; set; }
+    public int valueB { get; set; }
+    public int Priority { get; set; }
+}
+
+internal static class Program
+{
+    private static Mutex myMutex = new Mutex();
+    private static PriorityQueue<Message, int> myQueue = new();
+
+    private static void WriteToFile(Message message, string filePath)
+    {
+        using var streamWriter = File.AppendText(filePath);
+        streamWriter.WriteLine("Value A = {0}", message.valueA);
+        streamWriter.WriteLine("Value B = {0}", message.valueB);
+    }
+
+    private static async Task WriteStructAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            Message message = new Message();
+
+            Console.WriteLine("Enter the first value");
+
+            if (int.TryParse(Console.ReadLine(), out int valA))
+            {
+                message.valueA = valA;
+            }
+            else
+            {
+                Console.WriteLine("Invalid format");
+                continue;
+            }
+
+            Console.WriteLine("Enter the 2nd value");
+            if (int.TryParse(Console.ReadLine(), out int valB))
+            {
+                message.valueB = valB;
+            }
+            else
+            {
+                Console.WriteLine("Invalid format");
+                continue;
+            }
+
+            Console.WriteLine("Enter the priority of value");
+            if (int.TryParse(Console.ReadLine(), out int priority))
+            {
+                message.Priority = priority;
+            }
+            else
+            {
+                Console.WriteLine("Invalid format");
+                continue;
+            }
+
+            myMutex.WaitOne();
+            myQueue.Enqueue(message, message.Priority);
+            myMutex.ReleaseMutex();
+        }
+    }
+
+    private static async Task ReadAndWritePipeAsync(NamedPipeServerStream myServer, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (myQueue.Count > 0)
+            {
+                myMutex.WaitOne();
+                Message message = myQueue.Dequeue();
+                myMutex.ReleaseMutex();
+
+                if (!myServer.IsConnected)
+                {
+                    continue;
+                }
+
+                Console.WriteLine("Connected!");
+                byte[] bytes = new byte[Unsafe.SizeOf<Message>()];
+
+                MemoryMarshal.Write(bytes, ref message);
+
+                try
+                {
+                    await myServer.WriteAsync(bytes, cancellationToken);
+                    await myServer.ReadAsync(bytes, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+
+                message = MemoryMarshal.Read<Message>(bytes);
+                WriteToFile(message, "C:\\Users\\diana\\OneDrive\\Рабочий стол\\2class\\all_labs\\EVM\\C_Sharp2\\textlab.txt");
+            }
+        }
+    }
+
+    private static async Task Main(string[] args)
+    {
+        Console.WriteLine("Server is waiting for a connection...");
+
+        CancellationTokenSource cts = new CancellationTokenSource();
+        CancellationToken token = cts.Token;
+
+        var newServer = new NamedPipeServerStream("Lab2");
+
+        Console.WriteLine("Enter your data (CTRL+C to stop)");
+
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        Task t1 = WriteStructAsync(token);
+        newServer.WaitForConnection();
+        Task t2 = ReadAndWritePipeAsync(newServer, token);
+
+        await Task.WhenAll(t1, t2);
+        await newServer.DisposeAsync();
+    }
+}
