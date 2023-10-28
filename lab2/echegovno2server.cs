@@ -8,8 +8,9 @@ using System.Threading.Tasks;
 
 struct Message
 {
-    public bool Result { get; set; }
-    public int Data { get; set; }
+    public int valueA { get; set; }
+    public int valueB { get; set; }
+    public int Priority { get; set; }
 }
 
 class PipeServer
@@ -21,7 +22,7 @@ class PipeServer
             Console.WriteLine("Server is waiting for a connection...");
             await pipeServer.WaitForConnectionAsync();
 
-            PriorityQueue<Message> messageQueue = new PriorityQueue<Message>((m1, m2) => m1.Result.CompareTo(m2.Result));
+            PriorityQueue<Message> messageQueue = new PriorityQueue<Message>((m1, m2) => m1.valueA.CompareTo(m2.valueA));
             CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
 
             // Start a background task to process messages
@@ -33,10 +34,10 @@ class PipeServer
             {
                 // Read user input and add messages to the queue with priority
                 Console.Write("Введите данные: ");
-                int data = int.Parse(Console.ReadLine());
-                bool result = data % 2 == 0; // Example: priority based on even/odd
+                int valueB = int.Parse(Console.ReadLine());
+                int valueA = int.Parse(Console.ReadLine());
 
-                Message newMessage = new Message { Result = result, Data = data };
+                Message newMessage = new Message { valueA = valueA, valueB = valueB };
                 messageQueue.Enqueue(newMessage);
             }
         }
@@ -49,7 +50,7 @@ class PipeServer
             while (messageQueue.Count > 0)
             {
                 Message message = messageQueue.Dequeue();
-                Console.WriteLine($"Sending Result = {message.Result}, Data = {message.Data}");
+                Console.WriteLine($"Sending valueA = {message.valueA}, valueB = {message.valueB}");
                 await WriteMessageAsync(pipeStream, message);
             }
         }
