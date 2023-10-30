@@ -19,7 +19,7 @@ class PipeClient
             Console.WriteLine("Client is connecting...");
             pipeClient.Connect();
 
-            while (true) // Бесконечный цикл для ввода данных с клавиатуры
+            while (true) 
             {
                 Message sentMessage = new Message();
 
