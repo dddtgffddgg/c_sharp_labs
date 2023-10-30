@@ -101,17 +101,17 @@ class PipeServer
                     continue;
                 }
 
+                mutex.WaitOne();
+
                 if (int.TryParse(Console.ReadLine(), out int priority))
-                {
-                    message.Priority = priority;
+                { 
+                    queue.Enqueue(message, priority); 
                 }
                 else
                 {
-                    message.Priority = 0;
+                    queue.Enqueue(message, 0);
                 }
 
-                mutex.WaitOne();
-                queue.Dequeue(message, );
                 mutex.ReleaseMutex();
 
                 using (var pipeStream = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.Out))
