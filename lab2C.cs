@@ -2,22 +2,65 @@ using System;
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Text;
 
-struct Message
+
+/*struct Message
 {
     public int valueA { get; set; }
     public int valueB { get; set; }
-}
+}*/
 
 class PipeClient
 {
+    public static Mutex mutex = new Mutex();
+
+    public struct Work
+    {
+        public Work(int n, int s)
+        {
+            valueA = n;
+            valueB = s;
+        }
+        public int valueA { get; set; } 
+        public int valueB { get; set; }
+    }
+         
     private static async Task Main()
     {
         string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt";
 
         using (var pipeClient = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.InOut))
         {
-            Console.WriteLine("The client is connecting...");
+            try
+            {
+                await pipeClient.ConnectAsync();
+                Console.WriteLine("The client is connecting...");
+                
+                while (true)
+                {
+
+                    byte[] messageBuffer = new byte[Unsafe.SizeOf<Work>()];
+                    await pipeClient.ReadAsync(messageBuffer);
+
+                    Work receivedWork = MemoryMarshal.Read<Work>(messageBuffer);
+                    Console.WriteLine("Received from server: {0} and {1}.", receivedWork.valueA, receivedWork.valueB);
+
+                    Console.WriteLine("Hvatit");
+
+                    await pipeClient.WriteAsync(messageBuffer);
+
+                }
+            }
+            catch (Exception ex) 
+            {
+                Console.WriteLine("An error occurred: " + ex.Message);
+            }
+
+            /*Console.WriteLine("The client is connecting...");
             await pipeClient.ConnectAsync();
 
             var dataBuffer = new StringWriter();
@@ -74,7 +117,7 @@ class PipeClient
             catch(InvalidDataException ex)
             {
                 Console.WriteLine("Error reading the message: " + ex.Message);
-            }
+            }*/
             
         }
     }
