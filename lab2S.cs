@@ -4,68 +4,23 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
+using System.Net;
+using System.Text;
 
-struct Message
+internal struct Message
 {
     public int valueA { get; set; }
     public int valueB { get; set; }
-    public int Priority { get; set; }
 }
 
-class PipeServer
+internal static class PipeServer
 {
-    private static readonly Mutex mutex = new Mutex(false, "MyMutex");
-    private static readonly PriorityQueue<Message,int> queue = new PriorityQueue<Message,int>();
-    static void Main(string[] args)
-    {
-        try
-        {
-            using (var pipeServer = new NamedPipeServerStream("MyNamedPipe", PipeDirection.InOut))
-            {
-                Console.WriteLine("Server is waiting for connection...");
-                pipeServer.WaitForConnection();
+    private static Mutex mutex = new Mutex();
 
-                CancellationTokenSource cts = new CancellationTokenSource();
+    private static PriorityQueue<Message,int> queue = new PriorityQueue<Message,int>();
 
-                Task t1 = WriteStructAsync(cts.Token);
-
-                Task t2 = ReadAndWritePipeAsync(pipeServer, cts.Token);
-
-                Console.WriteLine("Press Ctrl+C to interrupt.");
-
-                Console.CancelKeyPress += (sender, e) =>
-                {
-                    e.Cancel = true;
-                    cts.Cancel();
-                };
-
-                Task.WhenAll(t1, t2).Wait();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An error occurred: {ex.Message}");
-        }
-
-        Console.WriteLine("Server's work is done");
-    }
-
-    static void WriteToFile(Message message, string filePath)
-    {
-        mutex.WaitOne();
-        try
-        {
-            using (var streamWriter = File.AppendText(filePath))
-            {
-                streamWriter.WriteLine("Value A = {0}", message.valueA);
-                streamWriter.WriteLine("Value B = {0}", message.valueB);
-            }
-        }
-        finally
-        {
-            mutex.ReleaseMutex();
-        }
-    }
+    static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt"; //путь к файлу для сохранения данных
 
     static Task WriteStructAsync(CancellationToken cancellationToken)
     {
@@ -76,7 +31,7 @@ class PipeServer
                 Message message = new Message();
 
                 Console.WriteLine("Enter the first value");
-
+                        
                 if (int.TryParse(Console.ReadLine(), out int valA))
                 {
                     message.valueA = valA;
@@ -84,7 +39,6 @@ class PipeServer
                 else
                 {
                     Console.WriteLine("Invalid format");
-                    continue;
                 }
 
                 Console.WriteLine("Enter the 2nd value");
@@ -98,7 +52,6 @@ class PipeServer
                 else
                 {
                     Console.WriteLine("Invalid format");
-                    continue;
                 }
 
                 mutex.WaitOne();
@@ -111,68 +64,103 @@ class PipeServer
                 {
                     queue.Enqueue(message, 0);
                 }
-
+                
                 mutex.ReleaseMutex();
 
-                using (var pipeStream = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.Out))
+            }
+        });
+    }
+
+    private static Task ReadAndWritePipeAsync(NamedPipeServerStream pipeServer, CancellationToken cancellationToken)
+    {
+        return Task.Run(async () =>
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                if (queue.Count > 0)
                 {
-                    pipeStream.Connect();
+                    mutex.WaitOne();
+
+                    Message message = queue.Dequeue(); 
+
+                    mutex.ReleaseMutex();
+
+
+                    if (!pipeServer.IsConnected) 
+                    {
+                        continue;
+                    }
+                
+                    Console.WriteLine("Connected!");
                     byte[] bytes = new byte[Unsafe.SizeOf<Message>()];
 
                     MemoryMarshal.Write(bytes, ref message);
 
                     try
                     {
-                        pipeStream.Write(bytes, 0, bytes.Length);
-                        pipeStream.Flush();
+                        await pipeServer.WriteAsync(bytes, cancellationToken);
+                        await pipeServer.ReadAsync(bytes, cancellationToken);
+                        message = MemoryMarshal.Read<Message>(bytes);
+                        WriteToFile(message, filePath); //сохранить данные в файл
+
                     }
+
                     catch (TaskCanceledException)
                     {
                         break;
                     }
 
-                    WriteToFile(message, "textlab.txt");
+                    message = MemoryMarshal.Read<Message>(bytes);
+                    WriteToFile(message, "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt");
                 }
+
             }
         });
     }
 
-    static Task ReadAndWritePipeAsync(NamedPipeServerStream pipeServer, CancellationToken cancellationToken)
-    {
-        return Task.Run(async () =>
-        {
-            while (!cancellationToken.IsCancellationRequested)
+    private static async Task Main()
             {
-                byte[] bytes = new byte[Unsafe.SizeOf<Message>()];
+                CancellationTokenSource cts = new CancellationTokenSource();
 
-                try
+                var newServer = new NamedPipeServerStream("MyNamedPipe");
+
+                Console.WriteLine("Enter your data (CTRC+C to interrupt)");
+
+                Console.CancelKeyPress += (sender, e) =>
                 {
-                    await pipeServer.ReadAsync(bytes, 0, bytes.Length, cancellationToken);
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
+                    Console.WriteLine("Ctrl+C pressed.\n Sending data to the client and exiting...");
+                    cts.Cancel();
+                    e.Cancel = true;
+                };
 
-                Message message = MemoryMarshal.Read<Message>(bytes);
 
-                using (var pipeStream = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.Out))
-                {
-                    pipeStream.Connect();
+                Task t1 = WriteStructAsync(cts.Token);
 
-                    try
-                    {
-                        pipeStream.Write(bytes, 0, bytes.Length);
-                        pipeStream.Flush();
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        break;
-                    }
+                newServer.WaitForConnection();
 
-                    WriteToFile(message, "textlab.txt");
-                }
+                Task t2 = ReadAndWritePipeAsync(newServer, cts.Token);
+
+                await Task.WhenAll(t1, t2);
+
+                await newServer.DisposeAsync();
+
+                Console.WriteLine("Server's work is done");
             }
-        });
-    }
+
+        static void WriteMessage(NamedPipeServerStream pipeStream, Message message)
+        {
+            byte[] buffer = new byte[Marshal.SizeOf<Message>()];
+            MemoryMarshal.Write(buffer, ref message);
+            pipeStream.Write(buffer, 0, buffer.Length);
+            pipeStream.Flush();
+        }
+
+        private static void WriteToFile(Message message, string filePath)
+        {
+            using var streamWriter = File.AppendText(filePath);
+            streamWriter.WriteLine("Value A = {0}", message.valueA);
+            streamWriter.WriteLine("Value B = {0}", message.valueB);
+
+        }
+
 }
