@@ -12,73 +12,42 @@ struct Message
 
 class PipeClient
 {
-    static void Main(string[] args)
+    private static async Task Main(string[] args)
     {
         using (var pipeClient = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.InOut))
         {
-            Console.WriteLine("Client is connecting...");
-            pipeClient.Connect();
-
-            while (true) 
+            try
             {
-                Message sentMessage = new Message();
+                Console.WriteLine("Client is connecting...");
+                pipeClient.Connect();
 
-                Console.WriteLine("Enter the first value");
-                if (int.TryParse(Console.ReadLine(), out int valA))
+                Console.CancelKeyPress += (sender, e) => //обработчик для Ctrl+C
                 {
-                    sentMessage.valueA = valA;
-                }
-                else
-                {
-                    Console.WriteLine("Invalid format");
-                    continue;
-                }
+                    e.Cancel = true; 
 
-                Console.WriteLine("Enter the 2nd value");
-                if (int.TryParse(Console.ReadLine(), out int valB))
-                {
-                    sentMessage.valueB = valB;
-                }
-                else
-                {
-                    Console.WriteLine("Invalid format");
-                    continue;
-                }
+                    pipeClient.Close();
+                };
 
-                Console.WriteLine("Enter the priority of value");
-                if (int.TryParse(Console.ReadLine(), out int priority))
+                while (true)
                 {
-                    sentMessage.Priority = priority;
-                }
-                else
-                {
-                    Console.WriteLine("Invalid format");
-                    continue;
-                }
+                    Message receivedMessage = ReadMessage(pipeClient);
+                    Console.WriteLine("Received Message: Value A = {0}, Value B = {1}, Priority = {2}", receivedMessage.valueA, receivedMessage.valueB, receivedMessage.Priority);
 
-                WriteMessage(pipeClient, sentMessage);
-
-                Message receivedMessage = ReadMessage(pipeClient);
-                Console.WriteLine("Value A = {0}, Value B = {1}, Priority = {2}", receivedMessage.valueA, receivedMessage.valueB, receivedMessage.Priority);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"An error occurred: {ex.Message}");
             }
         }
 
         Console.WriteLine("Client's work is done");
     }
-
-    static Message ReadMessage(NamedPipeClientStream pipeStream)
+    private static Message ReadMessage(NamedPipeClientStream pipeStream)
     {
         byte[] buffer = new byte[Unsafe.SizeOf<Message>()];
         pipeStream.Read(buffer, 0, buffer.Length);
         return MemoryMarshal.Read<Message>(buffer);
     }
 
-    static void WriteMessage(NamedPipeClientStream pipeStream, Message message)
-    {
-        byte[] buffer = new byte[Unsafe.SizeOf<Message>()];
-        MemoryMarshal.Write(buffer, ref message);
-
-        pipeStream.Write(buffer, 0, buffer.Length);
-        pipeStream.Flush();
-    }
 }
