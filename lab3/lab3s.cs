@@ -23,6 +23,17 @@ internal static class PipeServer
 
     //static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt"; //путь к файлу для сохранения данных
 
+    public struct Home
+    {
+        public Home(int n, int s)
+        {
+            valueA = n;
+            valueB = s;
+        }
+        public int valueA { get; set; }
+        public int valueB { get; set; }
+    }
+
     static Task WriteStructAsync(CancellationToken cancellationToken)
     {
         return Task.Run(() =>
