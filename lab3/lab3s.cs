@@ -19,9 +19,9 @@ internal static class PipeServer
 {
     private static Mutex mutex = new Mutex();
 
-    private static PriorityQueue<Message, int> queue = new PriorityQueue<Message, int>();
+    //private static PriorityQueue<Message, int> queue = new PriorityQueue<Message, int>();
 
-    static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt"; //путь к файлу для сохранения данных
+    //static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt"; //путь к файлу для сохранения данных
 
     static Task WriteStructAsync(CancellationToken cancellationToken)
     {
