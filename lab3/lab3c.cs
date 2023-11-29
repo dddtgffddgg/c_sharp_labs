@@ -7,11 +7,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
 
-struct Message
+
+/*struct Message
 {
     public int valueA { get; set; }
     public int valueB { get; set; }
-}
+}*/
 
 class PipeClient
 {
@@ -19,32 +20,18 @@ class PipeClient
 
     public struct Home
     {
-        public Home(int n, int s)
+        public Home(double n, double s)
         {
             valueA = n;
             valueB = s;
         }
-        public int valueA { get; set; }
-        public int valueB { get; set; }
+        public double valueA { get; set; }
+        public double valueB { get; set; }
     }
 
-    private static async Task Main(string[] args)
+    private static async Task Main()
     {
-        if (args.Length < 2)
-        {
-            Console.WriteLine("Not enough command line arguments");
-            return;
-        }
-
-        int valueA = int.Parse(args[0]);
-        int valueB = int.Parse(args[1]);
-
-        double result = TrapezoidalIntegration(1000, x => 2*Math.Sin(x), valueA, valueB);
-
-        Console.WriteLine($"Result of integral calculation: {result}");
-
-        Console.WriteLine("The client's work is completed");
-        //string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt";
+        string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt";
 
         using (var pipeClient = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.InOut))
         {
@@ -62,6 +49,17 @@ class PipeClient
                     Home receivedWork = MemoryMarshal.Read<Home>(messageBuffer);
                     Console.WriteLine("Received from server: {0} and {1}.", receivedWork.valueA, receivedWork.valueB);
 
+                    if (receivedWork.valueA == 1)
+                    {
+                        double result = CalculateTrapezoidalIntegral(0, Math.PI, 1000);
+                        Console.WriteLine("Calculated integral result: " + result);
+
+                        Home resultMessage = new Home { valueA = 0, valueB = (double)result };
+                        messageBuffer = MemoryMarshal.AsBytes(resultMessage);
+                        await pipeClient.WriteAsync(messageBuffer);
+
+                    }
+
                     Console.WriteLine("End of data transmission...");
 
                     await pipeClient.WriteAsync(messageBuffer);
@@ -73,22 +71,22 @@ class PipeClient
                 Console.WriteLine("An error occurred: " + ex.Message);
             }
 
-      
-    }
-    }
-    private static double TrapezoidalIntegration(int n, Func<double, double> func, double a, double b)
-    {
-        double h = (b - a) / n;
-        double result = (func(a) + func(b)) / 2.0;
 
-        for (int i = 1; i < n; i++)
+        }
+    }
+
+    private static double CalculateTrapezoidalIntegral(double a, double b, int numIntervals)
+    {
+        double h = (b - a) / numIntervals;
+        double sum = 0.5 * (Math.Sin(a) + Math.Sin(b));
+
+        for (int i = 1; i < numIntervals; i++)
         {
             double x = a + i * h;
-            result += func(x);
+            sum += Math.Sin(x);
         }
 
-        result *= h;
-
-        return result;
+        return h * sum;
     }
+
 }
