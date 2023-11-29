@@ -5,34 +5,23 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics;
 using System.Net;
 using System.Text;
+using System.Diagnostics;
 
 internal struct Message
 {
-    public int valueA { get; set; }
-    public int valueB { get; set; }
+    public double valueA { get; set; }
+    public double valueB { get; set; }
 }
 
 internal static class PipeServer
 {
     private static Mutex mutex = new Mutex();
 
-    //private static PriorityQueue<Message, int> queue = new PriorityQueue<Message, int>();
+    private static PriorityQueue<Message, double> queue = new PriorityQueue<Message, double>();
 
-    //static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt"; //путь к файлу для сохранения данных
-
-    public struct Home
-    {
-        public Home(int n, int s)
-        {
-            valueA = n;
-            valueB = s;
-        }
-        public int valueA { get; set; }
-        public int valueB { get; set; }
-    }
+    static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab3new.txt"; //путь к файлу для сохранения данных
 
     static Task WriteStructAsync(CancellationToken cancellationToken)
     {
@@ -44,7 +33,7 @@ internal static class PipeServer
 
                 Console.WriteLine("Enter the first value");
 
-                if (int.TryParse(Console.ReadLine(), out int valA))
+                if (double.TryParse(Console.ReadLine(), out double valA))
                 {
                     message.valueA = valA;
                 }
@@ -55,10 +44,11 @@ internal static class PipeServer
 
                 Console.WriteLine("Enter the 2nd value");
 
-                if (int.TryParse(Console.ReadLine(), out int valB))
+                if (double.TryParse(Console.ReadLine(), out double valB))
                 {
                     message.valueB = valB;
 
+                    Console.WriteLine("Enter the priority of value");
                 }
                 else
                 {
@@ -67,11 +57,9 @@ internal static class PipeServer
 
                 mutex.WaitOne();
 
-                if (int.TryParse(Console.ReadLine(), out int priority))
+                if (double.TryParse(Console.ReadLine(), out double priority))
                 {
-                    queue.Enqueue(message, 0);
-
-                    StartClientApp();
+                    queue.Enqueue(message, priority);
                 }
                 else
                 {
@@ -112,10 +100,9 @@ internal static class PipeServer
                     try
                     {
                         await pipeServer.WriteAsync(bytes, cancellationToken);
-                        //await pipeServer.ReadAsync(bytes, cancellationToken);
-                        //message = MemoryMarshal.Read<Message>(bytes);
-                        //WriteToFile(message, filePath); //сохранить данные в файл
-                        StartClientApp(message);
+                        await pipeServer.ReadAsync(bytes, cancellationToken);
+                        message = MemoryMarshal.Read<Message>(bytes);
+                        WriteToFile(message, filePath); //сохранить данные в файл
 
                     }
 
@@ -127,31 +114,6 @@ internal static class PipeServer
 
             }
         });
-    }
-    private static void StartClientApp()
-    {
-        try
-        {
-            string clientAppPath = "C:\\Users\\diana\\source\\repos\\Lab3C"; // путь к клиентскому приложению
-
-            ProcessStartInfo startInfo = new ProcessStartInfo
-            {
-                FileName = clientAppPath,
-                UseShellExecute = true,
-                CreateNoWindow = false,
-                Arguments = $"{message.valueA} {message.valueB}"
-            };
-
-            using (Process process = new Process { StartInfo = startInfo })
-            {
-                process.Start();
-                Console.WriteLine("Client application started.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error starting client application: {ex.Message}");
-        }
     }
 
 
@@ -173,11 +135,11 @@ internal static class PipeServer
 
         Task t1 = WriteStructAsync(cts.Token);
 
+        StartClientProcess();
+
         newServer.WaitForConnection();
 
         Task t2 = ReadAndWritePipeAsync(newServer, cts.Token);
-
-        StartClientApp(); //запуск второго консольного приложения
 
         await Task.WhenAll(t1, t2);
 
@@ -186,6 +148,27 @@ internal static class PipeServer
         Console.WriteLine("Server's work is done");
     }
 
+    private static void StartClientProcess()
+    {
+        string clientPath = "C:\\Users\\diana\\source\\repos\\Lab3C\\Lab3C";
+        string clientArguments = "";
+
+        ProcessStartInfo startInfo = new ProcessStartInfo
+        {
+            FileName = clientPath,
+            Arguments = clientArguments,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        using (Process process = new Process { StartInfo = startInfo})
+        {
+            process.Start();
+            Console.WriteLine("Client process started");
+        }
+    }
     private static void WriteToFile(Message message, string filePath)
     {
         using var streamWriter = File.AppendText(filePath);
