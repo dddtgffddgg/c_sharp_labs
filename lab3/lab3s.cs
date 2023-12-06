@@ -8,23 +8,30 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Text;
 using System.Diagnostics;
+using System.Reflection.Emit;
 
 internal struct Message
 {
     public double valueA { get; set; }
     public double valueB { get; set; }
+    public double result { get; set; }
 }
 
 internal static class PipeServer
 {
-    private static Mutex mutex = new Mutex();
+    private static readonly Mutex mutex = new Mutex();
 
-    private static PriorityQueue<Message, double> queue = new PriorityQueue<Message, double>();
-
-    static string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab3new.txt"; //путь к файлу для сохранения данных
-
-    static Task WriteStructAsync(CancellationToken cancellationToken)
+    private static readonly PriorityQueue<Message, int> queue = new PriorityQueue<Message, int>();
+    private static void WriteToFile(Message message, string filePath)
     {
+        using var streamWriter = File.AppendText(filePath);
+        streamWriter.WriteLine("value A = {0}, value B = {1} and result {2}", message.valueA, message.valueB, message.result);
+    }
+
+    private static Task WriteStructAsync(CancellationTokenSource cancellationTokensourse)
+    {
+        CancellationToken cancellationToken = cancellationTokensourse.Token;
+
         return Task.Run(() =>
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -55,9 +62,12 @@ internal static class PipeServer
                     Console.WriteLine("Invalid format");
                 }
 
+                if (cancellationTokensourse.IsCancellationRequested)
+                    break;
+
                 mutex.WaitOne();
 
-                if (double.TryParse(Console.ReadLine(), out double priority))
+                if (int.TryParse(Console.ReadLine(), out int priority))
                 {
                     queue.Enqueue(message, priority);
                 }
@@ -65,16 +75,15 @@ internal static class PipeServer
                 {
                     queue.Enqueue(message, 0);
                 }
-
                 mutex.ReleaseMutex();
-
             }
         });
     }
-
-    private static Task ReadAndWritePipeAsync(NamedPipeServerStream pipeServer, CancellationToken cancellationToken)
+    private static Task ReadAndWritePipeAsync(CancellationTokenSource cancellationTokensourse)
     {
-        return Task.Run(async () =>
+        CancellationToken cancellationToken = cancellationTokensourse.Token;
+
+        return Task.Run(() =>
         {
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -86,95 +95,79 @@ internal static class PipeServer
 
                     mutex.ReleaseMutex();
 
+                    _ = testAsync(message, cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
-                    if (!pipeServer.IsConnected)
-                    {
-                        continue;
-                    }
-
-                    Console.WriteLine("Connected!");
-                    byte[] bytes = new byte[Unsafe.SizeOf<Message>()];
-
-                    MemoryMarshal.Write(bytes, ref message);
-
-                    try
-                    {
-                        await pipeServer.WriteAsync(bytes, cancellationToken);
-                        await pipeServer.ReadAsync(bytes, cancellationToken);
-                        message = MemoryMarshal.Read<Message>(bytes);
-                        WriteToFile(message, filePath); //сохранить данные в файл
-
-                    }
-
-                    catch (TaskCanceledException)
-                    {
-                        break;
-                    }
                 }
 
             }
         });
     }
-
-
-    private static async Task Main()
+    private static async Task testAsync(Message message, CancellationToken cancellationToken)
     {
-        CancellationTokenSource cts = new CancellationTokenSource();
+        Process? clientProcess = default;
+        Guid id = Guid.NewGuid();
 
-        var newServer = new NamedPipeServerStream("MyNamedPipe");
+        NamedPipeServerStream PipeServer = new(id.ToString());
+        if (!PipeServer.IsConnected)
+        {
+            clientProcess = MyClientProcess(id.ToString());
+            PipeServer.WaitForConnection();
+        }
 
+        Console.WriteLine("Connect");
+        Console.WriteLine(message.valueA);
+        byte[] bytes = new byte[Unsafe.SizeOf<Message>()];
+        MemoryMarshal.Write(bytes, in message);
+
+        try
+        {
+            await PipeServer.WriteAsync(bytes, cancellationToken);
+            await PipeServer.ReadAsync(bytes, cancellationToken);
+        }
+        catch (TaskCanceledException)
+        {
+            Console.WriteLine("Did not work out(");
+        }
+
+        clientProcess?.WaitForExit();
+        message = MemoryMarshal.Read<Message>(bytes);
+        WriteToFile(message, "C:\\Users\\diana\\OneDrive\\Рабочий стол\\2class\\all_labs\\EVM\\C_Sharp3\\LABA3.txt");
+
+        PipeServer.Dispose();
+
+    }
+    private static async Task Main(string[] args)
+    {
         Console.WriteLine("Enter your data (CTRC+C to interrupt)");
+
+        CancellationTokenSource cancellationTokensourse = new CancellationTokenSource();
 
         Console.CancelKeyPress += (sender, e) =>
         {
-            Console.WriteLine("Ctrl+C pressed.\n Sending data to the client and exiting...");
-            cts.Cancel();
             e.Cancel = true;
+            cancellationTokensourse.Cancel();
         };
 
 
-        Task t1 = WriteStructAsync(cts.Token);
+        Task t1 = WriteStructAsync(cancellationTokensourse);
 
-        StartClientProcess();
+        //StartClientProcess(serverPipeName, server_id);
 
-        newServer.WaitForConnection();
-
-        Task t2 = ReadAndWritePipeAsync(newServer, cts.Token);
+        Task t2 = ReadAndWritePipeAsync(cancellationTokensourse);
 
         await Task.WhenAll(t1, t2);
 
-        await newServer.DisposeAsync();
-
-        Console.WriteLine("Server's work is done");
     }
 
-    private static void StartClientProcess()
+    private static Process? MyClientProcess(string name)
     {
-        string clientPath = "C:\\Users\\diana\\source\\repos\\Lab3C\\Lab3C";
-        string clientArguments = "";
-
-        ProcessStartInfo startInfo = new ProcessStartInfo
+        ProcessStartInfo startInfo = new ProcessStartInfo()
         {
-            FileName = clientPath,
-            Arguments = clientArguments,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
+            FileName = "C:\\Users\\diana\\OneDrive\\Рабочий стол\\2class\\all_labs\\EVM\\C_Sharp3\\LAB3Serv\\LAB3Cli\\bin\\Debug\\net8.0\\LAB3Cli.exe",
+            Arguments = $"{name}"
         };
 
-        using (Process process = new Process { StartInfo = startInfo})
-        {
-            process.Start();
-            Console.WriteLine("Client process started");
-        }
-    }
-    private static void WriteToFile(Message message, string filePath)
-    {
-        using var streamWriter = File.AppendText(filePath);
-        streamWriter.WriteLine("Value A = {0}", message.valueA);
-        streamWriter.WriteLine("Value B = {0}", message.valueB);
-
+        return Process.Start(startInfo);
     }
 
 }
