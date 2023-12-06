@@ -2,91 +2,81 @@ using System;
 using System.IO.Pipes;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using System.Text;
+using System.Diagnostics;
 
-
-/*struct Message
+struct Message
 {
-    public int valueA { get; set; }
-    public int valueB { get; set; }
-}*/
+    public double valueA { get; set; }
+    public double valueB { get; set; }
+    public double result { get; set; }
+}
 
 class PipeClient
 {
     public static Mutex mutex = new Mutex();
 
-    public struct Home
+    private static async Task Main(string[] args)
     {
-        public Home(double n, double s)
+        if (args.Length == 0)
         {
-            valueA = n;
-            valueB = s;
+            Console.WriteLine("Havent arguments");
+            return;
         }
-        public double valueA { get; set; }
-        public double valueB { get; set; }
-    }
 
-    private static async Task Main()
-    {
-        string filePath = "C:\\Users\\diana\\C_sharp_labs\\Lab2.txt";
+        string pipeName = args[0];
 
-        using (var pipeClient = new NamedPipeClientStream(".", "MyNamedPipe", PipeDirection.InOut))
+        using var pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+
+        try
         {
-            try
-            {
-                await pipeClient.ConnectAsync();
-                Console.WriteLine("The client is connecting...");
+            await pipeClient.ConnectAsync();
 
-                while (true)
-                {
+            Console.WriteLine("Client connected to the server.");
 
-                    byte[] messageBuffer = new byte[Unsafe.SizeOf<Home>()];
-                    await pipeClient.ReadAsync(messageBuffer);
+            byte[] bytes = new byte[Marshal.SizeOf<Message>()];
+            await pipeClient.ReadAsync(bytes, 0, bytes.Length);
 
-                    Home receivedWork = MemoryMarshal.Read<Home>(messageBuffer);
-                    Console.WriteLine("Received from server: {0} and {1}.", receivedWork.valueA, receivedWork.valueB);
+            var receivedMessage = MemoryMarshal.Read<Message>(bytes);
 
-                    if (receivedWork.valueA == 1)
-                    {
-                        double result = CalculateTrapezoidalIntegral(0, Math.PI, 1000);
-                        Console.WriteLine("Calculated integral result: " + result);
+            Console.WriteLine($"Received values from server: {receivedMessage.valueA}, {receivedMessage.valueB}");
 
-                        Home resultMessage = new Home { valueA = 0, valueB = (double)result };
-                        messageBuffer = MemoryMarshal.AsBytes(resultMessage);
-                        await pipeClient.WriteAsync(messageBuffer);
+            double result = TrapezoidIntegral(x => 2 * Math.Sin(x), receivedMessage.valueA, receivedMessage.valueB, 1000);
+            receivedMessage.result = result;
 
-                    }
+            Console.WriteLine($"Sending result back to the server: {result}");
 
-                    Console.WriteLine("End of data transmission...");
+            MemoryMarshal.Write(bytes, ref receivedMessage);
+            await pipeClient.WriteAsync(bytes, 0, bytes.Length);
 
-                    await pipeClient.WriteAsync(messageBuffer);
-
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("An error occurred: " + ex.Message);
-            }
-
-
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("An error occurred: " + ex.Message);
+        }
+        finally
+        {
+            pipeClient.Close();
         }
     }
 
-    private static double CalculateTrapezoidalIntegral(double a, double b, int numIntervals)
+    private static double TrapezoidIntegral(Func<double, double> function, double a, double b, int numIntervals)
     {
         double h = (b - a) / numIntervals;
-        double sum = 0.5 * (Math.Sin(a) + Math.Sin(b));
+        double result = 0.5 * (function(a) + function(b));
 
         for (int i = 1; i < numIntervals; i++)
         {
             double x = a + i * h;
-            sum += Math.Sin(x);
+            result += function(x);
         }
 
-        return h * sum;
+        result *= h;
+        return result;
     }
 
 }
